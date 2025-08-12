@@ -12,6 +12,11 @@ import uuid
 from datetime import datetime
 import asyncio
 import httpx
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Database setup
 SQLITE_DATABASE_URL = "sqlite:///./link_placement.db"
@@ -65,6 +70,8 @@ class ArticleUpdate(BaseModel):
 class AnalysisRequest(BaseModel):
     article_id: str
     html_content: str
+    custom_prompt: Optional[str] = None
+    opportunity_count: Optional[int] = 3
 
 class LinkOpportunity(BaseModel):
     id: int
@@ -103,26 +110,42 @@ def get_db():
         db.close()
 
 # Claude API integration
-async def analyze_with_claude(html_content: str, to_url: str, main_kw: str) -> AnalysisResult:
+async def analyze_with_claude(html_content: str, to_url: str, main_kw: str, custom_prompt: str = None, opportunity_count: int = 3) -> AnalysisResult:
     """Analyze article content with Claude API to find link placement opportunities"""
     
-    prompt = f"""
+    base_prompt = f"""
     You are an expert SEO and content strategist. Analyze this HTML article content and find the best opportunities to place a link to "{to_url}" using keywords related to "{main_kw}".
 
     HTML Content:
-    {html_content[:8000]}  # Truncate to avoid token limits
+    {html_content[:12000]}  # Increased limit for better context
 
     Target URL: {to_url}
     Main Keywords: {main_kw}
 
-    Find 1-3 optimal link placement opportunities and rate each 1-10. For each opportunity, provide:
-    1. Rating (1-10, where 10 = perfect contextual fit)
-    2. Location description (which section/paragraph)
-    3. Context (why this location makes sense)
-    4. Old text (existing text to modify)
-    5. New text (with the link naturally integrated)
-    6. Reasoning (why this placement works)
-    7. User value (what value this provides to readers)
+    CRITICAL REQUIREMENTS:
+    1. **CREATE PERFECT OPPORTUNITIES**: If no perfect 10/10 opportunity exists naturally in the content, CREATE one by suggesting strategic text additions or modifications
+    2. **BE PROACTIVE**: Always aim for at least one 9-10 rated opportunity - be creative and strategic
+    3. **COMPLETE HTML CONTEXT**: The "new_text" field must contain the COMPLETE HTML element (full <p>, <div>, <h2>, etc.) with the link integrated
+    4. **SPECIFIC LOCATIONS**: Provide precise location details about where in the article this content should be placed
+    5. **USE ACTUAL CONTENT WHERE POSSIBLE**: When modifying existing text, reference real content from the HTML, but don't hesitate to create new content when it creates better opportunities
+
+    LINK PLACEMENT STRATEGY:
+    - FIRST: Look for existing text that can be enhanced with natural link placement
+    - SECOND: If existing opportunities are weak, CREATE new content that provides genuine value
+    - THIRD: Consider strategic locations like after data sections, in conclusions, or where readers need additional resources
+    - Links should feel helpful and valuable, never forced or promotional
+
+    Find exactly {opportunity_count} optimal link placement opportunities and rate each 1-10. For each opportunity, provide:
+
+    1. **rating**: 1-10 (where 10 = perfect contextual fit that adds genuine reader value)
+    2. **location**: Specific section/paragraph where this should be placed (be precise about placement)
+    3. **context**: Why this location makes sense for the reader's journey through the content
+    4. **old_text**: The existing text to modify (can be empty if creating entirely new content)
+    5. **new_text**: The COMPLETE HTML element with link integrated (e.g., "<p>Existing content here. New sentence with <a href='{to_url}'>{main_kw}</a> for additional insights.</p>")
+    6. **reasoning**: Why this specific placement works for both SEO and user experience
+    7. **user_value**: What specific value this link provides to readers at this moment
+
+    {custom_prompt if custom_prompt else ""}
 
     Respond ONLY with valid JSON in this exact format:
     {{
@@ -130,21 +153,23 @@ async def analyze_with_claude(html_content: str, to_url: str, main_kw: str) -> A
             {{
                 "id": 1,
                 "rating": 10,
-                "location": "After ballistics comparison section",
-                "context": "Reader just absorbed performance data",
-                "old_text": "Original text here...",
-                "new_text": "Modified text with <a href='{to_url}'>link text</a> here...",
-                "reasoning": "Perfect contextual placement because...",
-                "user_value": "Provides immediate access to..."
+                "location": "After the ballistics comparison table in the main comparison section",
+                "context": "Reader has just reviewed detailed ballistics data and is ready for deeper analysis",
+                "old_text": "These ballistics show the performance characteristics of both cartridges.",
+                "new_text": "<p>These ballistics show the performance characteristics of both cartridges. For a comprehensive breakdown of 243 ballistics with additional testing data and real-world performance metrics, see our detailed <a href='{to_url}'>{main_kw}</a> analysis.</p>",
+                "reasoning": "Perfect contextual placement - readers examining ballistics data want deeper technical resources",
+                "user_value": "Provides access to comprehensive ballistics data and real-world testing results"
             }}
         ],
-        "article_type": "Ballistics/Comparison Article", 
-        "reader_intent": "Learning about cartridge performance",
-        "best_strategy": "Leverage post-data consumption moments"
+        "article_type": "Technical Comparison Article", 
+        "reader_intent": "Research and performance analysis",
+        "best_strategy": "Strategic post-data placement with value-added resources"
     }}
 
     DO NOT OUTPUT ANYTHING OTHER THAN VALID JSON.
     """
+    
+    prompt = base_prompt
 
     try:
         # Simulate Claude API call (replace with actual API call)
@@ -153,10 +178,11 @@ async def analyze_with_claude(html_content: str, to_url: str, main_kw: str) -> A
                 "https://api.anthropic.com/v1/messages",
                 headers={
                     "Content-Type": "application/json",
-                    "anthropic-version": "2023-06-01"
+                    "anthropic-version": "2023-06-01",
+                    "x-api-key": os.getenv("ANTHROPIC_API_KEY")
                 },
                 json={
-                    "model": "claude-3-sonnet-20240229",
+                    "model": "claude-sonnet-4-20250514",
                     "max_tokens": 2000,
                     "messages": [{"role": "user", "content": prompt}]
                 },
@@ -324,7 +350,9 @@ async def analyze_article(article_id: str, request: AnalysisRequest, db: Session
         result = await analyze_with_claude(
             request.html_content, 
             article.to_url, 
-            article.main_kw
+            article.main_kw,
+            request.custom_prompt,
+            request.opportunity_count or 3
         )
         
         # Store results

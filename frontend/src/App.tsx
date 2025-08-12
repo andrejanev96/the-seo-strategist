@@ -53,6 +53,9 @@ const TheSEOStrategist = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showNewProject, setShowNewProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
+  const [customPrompt, setCustomPrompt] = useState('');
+  const [opportunityCount, setOpportunityCount] = useState(3);
+  const [currentOpportunityIndex, setCurrentOpportunityIndex] = useState(0);
 
   // Load projects on mount
   useEffect(() => {
@@ -137,13 +140,16 @@ const TheSEOStrategist = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           article_id: articles[currentArticleIndex].id,
-          html_content: htmlContent
+          html_content: htmlContent,
+          custom_prompt: customPrompt || undefined,
+          opportunity_count: opportunityCount
         })
       });
       
       if (response.ok) {
         const result = await response.json();
         setAnalysisResult(result);
+        setCurrentOpportunityIndex(0); // Reset to first opportunity
         
         // Update article status in local state
         const updatedArticles = [...articles];
@@ -158,6 +164,24 @@ const TheSEOStrategist = () => {
     }
   };
 
+  const loadArticleAnalysis = async (articleId: string) => {
+    try {
+      const response = await fetch(`${API_BASE}/articles/${articleId}`);
+      if (response.ok) {
+        const articleData = await response.json();
+        if (articleData.analysis) {
+          setAnalysisResult(articleData.analysis);
+          setCurrentOpportunityIndex(0); // Reset to first opportunity
+        } else {
+          setAnalysisResult(null);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading article analysis:', error);
+      setAnalysisResult(null);
+    }
+  };
+
   const navigateArticle = (direction: 'next' | 'prev') => {
     const newIndex = direction === 'next' 
       ? Math.min(currentArticleIndex + 1, articles.length - 1)
@@ -165,7 +189,13 @@ const TheSEOStrategist = () => {
     
     setCurrentArticleIndex(newIndex);
     setHtmlContent('');
-    setAnalysisResult(null);
+    
+    // Load analysis results for the new article if they exist
+    if (articles[newIndex] && articles[newIndex].has_analysis) {
+      loadArticleAnalysis(articles[newIndex].id);
+    } else {
+      setAnalysisResult(null);
+    }
   };
 
   const exportResults = async () => {
@@ -538,6 +568,86 @@ const TheSEOStrategist = () => {
                       </div>
                     </div>
 
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                        <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+                        Custom Instructions (Optional)
+                        <span className="ml-auto text-xs text-gray-500">Modify AI analysis approach</span>
+                      </label>
+                      <div className="relative">
+                        <textarea
+                          value={customPrompt}
+                          onChange={(e) => setCustomPrompt(e.target.value)}
+                          placeholder="Add custom instructions for the AI analysis...\n\nExamples:\n• 'Be more aggressive with link placement'\n• 'Focus on high-converting locations only'\n• 'Make the links sound more natural'\n• 'Prioritize user experience over SEO'"
+                          className="w-full h-32 p-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 resize-none text-sm transition-all bg-white/80"
+                        />
+                        {customPrompt && (
+                          <div className="absolute bottom-3 right-3 bg-purple-100 text-purple-700 px-2 py-1 rounded-lg text-xs font-medium">
+                            Custom prompt active
+                          </div>
+                        )}
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {['More aggressive links', 'Conservative placement', 'Focus on user value', 'Natural language'].map((template) => (
+                          <button
+                            key={template}
+                            onClick={() => setCustomPrompt(template === 'More aggressive links' ? 'Be more aggressive with link placement. Find 3-4 opportunities instead of 1-3.' :
+                              template === 'Conservative placement' ? 'Be conservative with link placement. Only suggest links where they add genuine value to the reader.' :
+                              template === 'Focus on user value' ? 'Focus primarily on user value and natural reading experience. Links should feel helpful, not promotional.' :
+                              'Make the link text and integration sound very natural and conversational.')}
+                            className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs hover:bg-purple-200 transition-colors"
+                          >
+                            {template}
+                          </button>
+                        ))}
+                        {customPrompt && (
+                          <button
+                            onClick={() => setCustomPrompt('')}
+                            className="px-3 py-1 bg-gray-100 text-gray-600 rounded-full text-xs hover:bg-gray-200 transition-colors"
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        Number of Opportunities
+                        <span className="ml-auto text-xs text-gray-500">How many link opportunities to find</span>
+                      </label>
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2">
+                          {[1, 2, 3, 4, 5].map((count) => (
+                            <button
+                              key={count}
+                              onClick={() => setOpportunityCount(count)}
+                              className={`w-10 h-10 rounded-lg font-semibold transition-all ${
+                                opportunityCount === count
+                                  ? 'bg-green-500 text-white shadow-lg'
+                                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                              }`}
+                            >
+                              {count}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex-1 text-right">
+                          <div className="text-sm text-gray-600">
+                            <span className="font-medium">Selected: {opportunityCount}</span> opportunities
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            {opportunityCount === 1 ? 'Single best opportunity - quality focused' :
+                             opportunityCount === 2 ? 'Focused approach - top opportunities only' :
+                             opportunityCount === 3 ? 'Balanced approach - good coverage' :
+                             opportunityCount === 4 ? 'Comprehensive approach - more options' :
+                             'Extensive approach - maximum opportunities'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="flex gap-4">
                       <button
                         onClick={analyzeCurrentArticle}
@@ -672,6 +782,19 @@ const TheSEOStrategist = () => {
                             </div>
                           </div>
                         </div>
+                        <div className="mt-4 pt-4 border-t border-blue-200">
+                          <button
+                            onClick={() => {
+                              setAnalysisResult(null);
+                              analyzeCurrentArticle();
+                            }}
+                            disabled={isAnalyzing}
+                            className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 disabled:opacity-50 text-sm font-medium transition-colors"
+                          >
+                            <Zap className="w-4 h-4" />
+                            Re-analyze with Current Settings
+                          </button>
+                        </div>
                       </div>
 
                       {/* Opportunities */}
@@ -683,77 +806,106 @@ const TheSEOStrategist = () => {
                             </div>
                             Link Opportunities
                           </h4>
-                          <div className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-semibold">
-                            {analysisResult.opportunities.length} found
+                          <div className="flex items-center gap-3">
+                            <div className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-semibold">
+                              {analysisResult.opportunities.length} found
+                            </div>
+                            {analysisResult.opportunities.length > 1 && (
+                              <div className="flex items-center gap-2 bg-blue-50 px-3 py-1 rounded-full">
+                                <button
+                                  onClick={() => setCurrentOpportunityIndex(Math.max(0, currentOpportunityIndex - 1))}
+                                  disabled={currentOpportunityIndex === 0}
+                                  className="p-1 rounded-full hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                  <ChevronLeft className="w-4 h-4 text-blue-600" />
+                                </button>
+                                <span className="text-sm text-blue-700 font-medium min-w-[3rem] text-center">
+                                  {currentOpportunityIndex + 1} of {analysisResult.opportunities.length}
+                                </span>
+                                <button
+                                  onClick={() => setCurrentOpportunityIndex(Math.min(analysisResult.opportunities.length - 1, currentOpportunityIndex + 1))}
+                                  disabled={currentOpportunityIndex === analysisResult.opportunities.length - 1}
+                                  className="p-1 rounded-full hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                  <ChevronRight className="w-4 h-4 text-blue-600" />
+                                </button>
+                              </div>
+                            )}
                           </div>
                         </div>
                         
-                        <div className="space-y-6">
-                          {analysisResult.opportunities.map((opportunity) => (
-                            <div key={opportunity.id} className="border-2 border-gray-200 rounded-2xl p-6 hover:border-blue-300 transition-all duration-200 bg-white/80">
-                              <div className="flex items-start justify-between mb-4">
-                                <div className="flex items-center gap-3">
-                                  <div className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold border-2 ${getRatingColor(opportunity.rating)}`}>
-                                    <Target className="w-4 h-4" />
-                                    {opportunity.rating}/10
-                                  </div>
-                                  <div className="text-sm text-gray-500">
-                                    Opportunity #{opportunity.id}
-                                  </div>
-                                </div>
-                              </div>
-                              
-                              <div className="space-y-4">
-                                <div className="bg-blue-50/50 rounded-xl p-4 border border-blue-200">
-                                  <h5 className="font-semibold text-blue-900 text-sm mb-2 flex items-center gap-2">
-                                    <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-                                    Location & Context
-                                  </h5>
-                                  <p className="text-sm text-blue-800 font-medium mb-1">{opportunity.location}</p>
-                                  <p className="text-sm text-gray-700">{opportunity.context}</p>
-                                </div>
-                                
-                                <div className="bg-purple-50/50 rounded-xl p-4 border border-purple-200">
-                                  <h5 className="font-semibold text-purple-900 text-sm mb-2 flex items-center gap-2">
-                                    <div className="w-3 h-3 bg-purple-500 rounded-full"></div>
-                                    AI Reasoning
-                                  </h5>
-                                  <p className="text-sm text-gray-700">{opportunity.reasoning}</p>
-                                </div>
-                                
-                                <div className="bg-green-50/50 rounded-xl p-4 border border-green-200">
-                                  <h5 className="font-semibold text-green-900 text-sm mb-2 flex items-center gap-2">
-                                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                                    User Value
-                                  </h5>
-                                  <p className="text-sm text-gray-700">{opportunity.user_value}</p>
-                                </div>
-                                
-                                <div className="space-y-4">
-                                  <div>
-                                    <label className="block text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
-                                      <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                                      Original Text
-                                    </label>
-                                    <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 text-sm text-gray-800 font-mono">
-                                      {opportunity.old_text}
+                        {/* Single Opportunity Display */}
+                        {analysisResult.opportunities.length > 0 && (
+                          <div className="border-2 border-gray-200 rounded-2xl p-6 hover:border-blue-300 transition-all duration-200 bg-white/80">
+                            {(() => {
+                              const opportunity = analysisResult.opportunities[currentOpportunityIndex];
+                              return (
+                                <>
+                                  <div className="flex items-start justify-between mb-4">
+                                    <div className="flex items-center gap-3">
+                                      <div className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold border-2 ${getRatingColor(opportunity.rating)}`}>
+                                        <Target className="w-4 h-4" />
+                                        {opportunity.rating}/10
+                                      </div>
+                                      <div className="text-sm text-gray-500">
+                                        Opportunity #{opportunity.id}
+                                      </div>
                                     </div>
                                   </div>
                                   
-                                  <div>
-                                    <label className="block text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
-                                      <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                                      With Link Added
-                                    </label>
-                                    <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4 text-sm text-gray-800 font-mono">
-                                      <div dangerouslySetInnerHTML={{ __html: opportunity.new_text }} />
+                                  <div className="space-y-4">
+                                    <div className="bg-blue-50/50 rounded-xl p-4 border border-blue-200">
+                                      <h5 className="font-semibold text-blue-900 text-sm mb-2 flex items-center gap-2">
+                                        <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+                                        Location & Context
+                                      </h5>
+                                      <p className="text-sm text-blue-800 font-medium mb-1">{opportunity.location}</p>
+                                      <p className="text-sm text-gray-700">{opportunity.context}</p>
+                                    </div>
+                                    
+                                    <div className="bg-purple-50/50 rounded-xl p-4 border border-purple-200">
+                                      <h5 className="font-semibold text-purple-900 text-sm mb-2 flex items-center gap-2">
+                                        <div className="w-3 h-3 bg-purple-500 rounded-full"></div>
+                                        AI Reasoning
+                                      </h5>
+                                      <p className="text-sm text-gray-700">{opportunity.reasoning}</p>
+                                    </div>
+                                    
+                                    <div className="bg-green-50/50 rounded-xl p-4 border border-green-200">
+                                      <h5 className="font-semibold text-green-900 text-sm mb-2 flex items-center gap-2">
+                                        <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                                        User Value
+                                      </h5>
+                                      <p className="text-sm text-gray-700">{opportunity.user_value}</p>
+                                    </div>
+                                    
+                                    <div className="space-y-4">
+                                      <div>
+                                        <label className="block text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                                          <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                                          Original Text
+                                        </label>
+                                        <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 text-sm text-gray-800 font-mono">
+                                          {opportunity.old_text}
+                                        </div>
+                                      </div>
+                                      
+                                      <div>
+                                        <label className="block text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                                          <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                                          With Link Added
+                                        </label>
+                                        <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4 text-sm text-gray-800 font-mono">
+                                          <div dangerouslySetInnerHTML={{ __html: opportunity.new_text }} />
+                                        </div>
+                                      </div>
                                     </div>
                                   </div>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
+                                </>
+                              );
+                            })()}
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
