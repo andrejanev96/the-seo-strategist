@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Upload, FileSpreadsheet, ChevronLeft, ChevronRight, Download, Loader, CheckCircle, Target, Zap } from 'lucide-react';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = process.env.NODE_ENV === 'production' 
+  ? 'https://your-backend-url.com' 
+  : 'http://localhost:8000';
 
 // Type definitions
 interface Project {
